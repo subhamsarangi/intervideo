@@ -12,82 +12,7 @@ type Pt = { x: number; y: number };
 type Params = { open: number; wide: number; round: number };
 type Eye = { poly: Pt[]; skin: string; a: Pt; b: Pt; lowerMid: Pt };
 
-// =====================================================================================
-//  TUNING: every look-and-feel setting lives in this one block. Edit, save, reload the page.
-//  Sizes are "x mouth width" (relative to the mouth in YOUR photo), so they work at any resolution.
-//  Add #debug to the page URL to see the mesh points while you tune.
-// =====================================================================================
-export const TUNING = {
-  // ---- upper teeth ----
-  teeth: {
-    colorTop: "#d2c8bb", // gradient: top edge (in shadow)
-    colorMiddle: "#4b4741", // brightest band
-    colorBottom: "#d6cbbd", // bottom edge
-    middleStop: 0.35, // where the bright band sits, 0 = top, 1 = bottom
-    sideInset: 0.12, // gap between teeth and each mouth corner (share of mouth opening width)
-    baseHeight: 0.03, // teeth height when the mouth is barely open (x mouth width)
-    heightPerOpen: 0.09, // extra height as the jaw opens (x mouth width)
-    maxHeightShare: 0.38, // teeth never taller than this share of the mouth opening
-    cornerRadius: 0.45, // rounding of the bottom corners (share of teeth height)
-    count: 6, // number of teeth across; gaps = count - 1
-    gapColor: "rgba(49, 24, 6, 0.35)", // lines between teeth; use alpha 0 to remove them
-    gapWidth: 1.0, // px
-    gapLength: 0.9, // share of teeth height the gap lines run down
-    hideOnPucker: 0.9, // 0 = teeth stay visible on "oo", 1 = fully hidden
-  },
-
-  // ---- inside of the mouth ----
-  mouth: {
-    cavityTop: "#2a0a0e",
-    cavityBottom: "#321519",
-    tongueColor: "#7d2a35",
-    tongueMinOpen: 0.3, // tongue appears once the jaw is open this much (0-1)
-    tongueWidth: 0.28, // share of the mouth opening width
-    tongueHeight: 0.34, // share of the mouth opening height
-    upperLipShadow: 0.55, // darkness right under the upper lip (0-1)
-    upperLipShadowDepth: 0.55, // how far down that shadow reaches (share of opening height)
-    cornerShadow: 0.6, // darkness in both mouth corners (0-1)
-    cornerShadowWidth: 0.2, // how far in from each corner it reaches (share of opening width)
-    minOpenToShow: 0.02, // below this the interior is not drawn at all
-    appearSpeed: 8, // how fast the interior fades in as the mouth opens
-  },
-
-  // ---- how far things move ----
-  motion: {
-    jawDrop: 0.28, // jaw travel at full "ah" (x mouth width); lower = calmer mouth
-    lipSpread: 0.22, // corners spread on "ee"
-    lipPucker: 0.3, // corners squeeze on "oo"
-    upperLipLift: 0.06, // upper lip rises a little when the jaw opens
-    cornerFollow: 0.25, // how much lip corners and lower-lip edges follow the jaw (0-1)
-    smileLift: 0.05, // corners lift on "ee"
-    openSeconds: 0.03, // smoothing when the mouth opens (smaller = snappier)
-    closeSeconds: 0.055, // smoothing when it closes
-  },
-
-  // ---- blinking ----
-  blink: {
-    seconds: 0.15, // duration of one blink
-    firstMin: 1.5, // first blink happens between these two times (s)
-    firstMax: 4.5,
-    gapMin: 5, // then one every gapMin to gapMax seconds
-    gapMax: 10,
-    lashColor: "rgba(118, 94, 94, 0.75)", // the closed-eye line
-    lashWidth: 1.6, // px
-    skinSampleOffset: 0.22, // where eyelid colour is sampled, above the eye (x eye width)
-  },
-
-  // ---- idle head movement ----
-  head: {
-    amount: 1, // master dial: 0 = head perfectly still, 1 = default, 2 = twice as much
-    tilt: 0.01, // slow tilt (radians)
-    tiltFast: 0.006, // quicker small tilt
-    tiltWhenSpeaking: 0.008, // extra tilt while talking
-    zoom: 0.004, // slow breathing zoom
-    zoomWhenSpeaking: 0.005, // extra zoom while talking
-    driftX: 1.5, // sideways drift (px)
-    driftY: 1.2, // up/down drift (px)
-  },
-};
+import { FILES, TUNING } from "./tuning";
 
 // ---------- MediaPipe landmark index rings (checked against MediaPipe's own lip/eye connection lists) ----------
 // 20 points each, same order: 0 = left corner, 1-9 upper lip, 10 = right corner, 11-19 lower lip.
@@ -149,7 +74,8 @@ export const VISEME_PARAMS: Params[] = [
 
 // ---------- scene ----------
 export interface Scene {
-  base: HTMLCanvasElement; // the photo, drawn at output size (slightly overscanned so head motion never shows edges)
+  base: HTMLCanvasElement; // the person, drawn at output size (slightly overscanned so head motion never shows edges)
+  bg: HTMLCanvasElement | null; // optional static background, drawn behind and never moved
   w: number;
   h: number;
   S: Pt[]; // source mesh vertices: OUT, IN, NEAR, FAR rings
@@ -193,7 +119,11 @@ function sampleSkin(base: HTMLCanvasElement, at: Pt): string {
 }
 
 /** lm = the 478 MediaPipe landmarks in base-canvas pixel coordinates. */
-export function buildScene(base: HTMLCanvasElement, lm: Pt[]): Scene {
+export function buildScene(
+  base: HTMLCanvasElement,
+  lm: Pt[],
+  bg: HTMLCanvasElement | null = null,
+): Scene {
   const outer = OUTER.map((i) => lm[i]);
   const inner = INNER.map((i) => lm[i]);
   const c = mean(inner);
@@ -230,6 +160,7 @@ export function buildScene(base: HTMLCanvasElement, lm: Pt[]): Scene {
 
   return {
     base,
+    bg,
     w: base.width,
     h: base.height,
     S: [...outer, ...inner, ...near, ...far],
@@ -492,19 +423,21 @@ export function renderScene(
 ) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, s.w, s.h);
+  if (s.bg) ctx.drawImage(s.bg, 0, 0); // the background stays still; only the person moves
 
   // idle head motion, a little livelier while speaking
   const H = TUNING.head;
+  const k = s.bg ? H.amount : H.amountOnFlatPhoto;
   const angle =
-    H.amount *
+    k *
     (H.tilt * Math.sin(t * 0.7) +
       H.tiltFast * Math.sin(t * 1.9) +
       energy * H.tiltWhenSpeaking * Math.sin(t * 3.1));
   const scale =
-    1 + H.amount * (H.zoom * Math.sin(t * 0.4) + H.zoomWhenSpeaking * energy);
+    1 + k * (H.zoom * Math.sin(t * 0.4) + H.zoomWhenSpeaking * energy);
   ctx.translate(
-    s.pivot.x + H.amount * H.driftX * Math.sin(t * 0.5),
-    s.pivot.y + H.amount * H.driftY * Math.sin(t * 0.63 + 1),
+    s.pivot.x + k * H.driftX * Math.sin(t * 0.5),
+    s.pivot.y + k * H.driftY * Math.sin(t * 0.63 + 1),
   );
   ctx.rotate(angle);
   ctx.scale(scale, scale);
@@ -531,17 +464,30 @@ export function demoViseme(): number {
   ];
 }
 
-export async function createAvatar(
-  canvas: HTMLCanvasElement,
-  photoUrl = "/avatar.jpg",
-): Promise<Avatar> {
-  const img = new Image();
-  img.src = photoUrl;
-  await img.decode().catch(() => {
+/** Loads the first URL that is really an image. (In dev, Vite answers missing files with a web page, which fails to decode, so we move on.) */
+async function loadFirstImage(
+  urls: string[],
+): Promise<HTMLImageElement | null> {
+  for (const url of urls) {
+    const img = new Image();
+    img.src = url;
+    try {
+      await img.decode();
+      return img;
+    } catch {
+      // not there, try the next name
+    }
+  }
+  return null;
+}
+
+export async function createAvatar(canvas: HTMLCanvasElement): Promise<Avatar> {
+  const img = await loadFirstImage(FILES.avatar);
+  if (!img)
     throw new Error(
-      `Could not load ${photoUrl}. Put your photo at public/avatar.jpg.`,
+      "Could not load your photo. Put it in public/ as avatar.png (or avatar.jpg).",
     );
-  });
+  const bgImg = await loadFirstImage(FILES.background);
 
   // 1. Find the face landmarks once, on the original full-resolution photo.
   const fileset = await FilesetResolver.forVisionTasks("/wasm");
@@ -572,9 +518,22 @@ export async function createAvatar(
     .getContext("2d", { willReadFrequently: true })!
     .drawImage(img, ox, oy, dw, dh);
 
+  // optional static background, cover-fit to the tile with no overscan (it never moves)
+  let bg: HTMLCanvasElement | null = null;
+  if (bgImg) {
+    const bk = Math.max(W / bgImg.naturalWidth, H / bgImg.naturalHeight);
+    const bw = bgImg.naturalWidth * bk,
+      bh = bgImg.naturalHeight * bk;
+    bg = document.createElement("canvas");
+    bg.width = W;
+    bg.height = H;
+    bg.getContext("2d")!.drawImage(bgImg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+  }
+
   const scene = buildScene(
     base,
     face.map((q) => ({ x: ox + q.x * dw, y: oy + q.y * dh })),
+    bg,
   );
   const ctx = canvas.getContext("2d")!;
   const debug = location.hash.includes("debug");
