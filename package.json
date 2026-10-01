@@ -1,0 +1,30 @@
+{
+  "name": "avatar-app",
+  "version": "1.0.0",
+  "scripts": {
+    "server": "tsx watch --env-file=.env server.ts",
+    "web": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "setup": "node setup-mediapipe.mjs"
+  },
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@deepgram/sdk": "^5.13.0",
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "microsoft-cognitiveservices-speech-sdk": "^1.52.0",
+    "openai": "^7.25.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}
