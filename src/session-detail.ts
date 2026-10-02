@@ -9,12 +9,15 @@ type Turn = {
 type SessionDetailResponse = {
   id: string;
   turns: Turn[];
+  systemPrompt?: string;
   hasPdf: boolean;
 };
 
 const sessionTitleEl = document.getElementById("sessionTitle") as HTMLElement;
 const sessionTimeEl = document.getElementById("sessionTime") as HTMLElement;
 const turnCountEl = document.getElementById("turnCount") as HTMLElement;
+const systemPromptCard = document.getElementById("systemPromptCard") as HTMLElement;
+const systemPromptContent = document.getElementById("systemPromptContent") as HTMLElement;
 const pdfBtnContainer = document.getElementById("pdfBtnContainer") as HTMLElement;
 const headerActions = document.getElementById("headerActions") as HTMLElement;
 const loadingEl = document.getElementById("loading") as HTMLElement;
@@ -91,6 +94,17 @@ async function loadSessionDetail() {
 
     loadingEl.style.display = "none";
     renderPdfButtons(data.hasPdf);
+
+    systemPromptCard.style.display = "block";
+    if (data.systemPrompt && data.systemPrompt.trim()) {
+      systemPromptContent.textContent = data.systemPrompt;
+      systemPromptContent.style.fontStyle = "normal";
+      systemPromptContent.style.color = "var(--text)";
+    } else {
+      systemPromptContent.textContent = "(Not recorded for this session. System prompts are now saved automatically for all new sessions.)";
+      systemPromptContent.style.fontStyle = "italic";
+      systemPromptContent.style.color = "var(--muted)";
+    }
 
     const turns = data.turns || [];
     turnCountEl.textContent = `💬 ${turns.length} messages`;

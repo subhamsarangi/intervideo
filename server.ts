@@ -115,6 +115,12 @@ async function startSession(ws: WebSocket, systemPrompt: string) {
   let muted = false;
   let chain: Promise<void> = Promise.resolve();
 
+  // Save initial session metadata including system prompt
+  await appendFile(
+    logFile,
+    JSON.stringify({ type: "meta", systemPrompt, createdAt: Date.now() }) + "\n"
+  );
+
   const send = (obj: unknown) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
   };
@@ -241,13 +247,20 @@ const server = createServer(async (req, res) => {
 
           let messageCount = 0;
           let preview = "";
+          let systemPrompt = "";
           try {
             const content = await readFile(filePath, "utf8");
             const lines = content.trim().split("\n").filter(Boolean);
-            messageCount = lines.length;
-            if (lines.length > 0) {
-              const firstTurn = JSON.parse(lines[0]);
-              preview = firstTurn.content ?? "";
+            for (const line of lines) {
+              const record = JSON.parse(line);
+              if (record.type === "meta") {
+                if (record.systemPrompt) systemPrompt = record.systemPrompt;
+              } else if (record.role) {
+                messageCount++;
+                if (!preview && record.content) {
+                  preview = record.content;
+                }
+              }
             }
           } catch {}
 
@@ -262,6 +275,7 @@ const server = createServer(async (req, res) => {
             createdAt: fileStat.birthtimeMs || fileStat.mtimeMs,
             messageCount,
             preview,
+            systemPrompt,
             hasPdf,
           };
         })
@@ -298,14 +312,21 @@ const server = createServer(async (req, res) => {
         }
       }
 
-      // Return session turns
+      // Return session turns & system prompt
       try {
         const content = await readFile(jsonlPath, "utf8");
-        const turns: Turn[] = content
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line));
+        const lines = content.trim().split("\n").filter(Boolean);
+        const turns: Turn[] = [];
+        let systemPrompt = "";
+
+        for (const line of lines) {
+          const record = JSON.parse(line);
+          if (record.type === "meta") {
+            if (record.systemPrompt) systemPrompt = record.systemPrompt;
+          } else if (record.role) {
+            turns.push(record as Turn);
+          }
+        }
 
         let hasPdf = false;
         try {
@@ -313,7 +334,7 @@ const server = createServer(async (req, res) => {
           hasPdf = true;
         } catch {}
 
-        return json(200, { id, turns, hasPdf });
+        return json(200, { id, turns, systemPrompt, hasPdf });
       } catch {
         return json(404, { error: "Session not found" });
       }
@@ -331,13 +352,18 @@ const server = createServer(async (req, res) => {
       const pdfPath = path.join(SESSIONS_DIR, `${id}.pdf`);
 
       let turns: Turn[] = [];
+      let systemPrompt = "";
       try {
         const content = await readFile(jsonlPath, "utf8");
-        turns = content
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line));
+        const lines = content.trim().split("\n").filter(Boolean);
+        for (const line of lines) {
+          const record = JSON.parse(line);
+          if (record.type === "meta") {
+            if (record.systemPrompt) systemPrompt = record.systemPrompt;
+          } else if (record.role) {
+            turns.push(record as Turn);
+          }
+        }
       } catch {
         return json(404, { error: "Session not found" });
       }
@@ -350,6 +376,12 @@ const server = createServer(async (req, res) => {
         doc.fontSize(20).text("Conversation Transcript", { underline: true });
         doc.fontSize(10).fillColor("#666666").text(`Session ID: ${id}`);
         doc.text(`Generated: ${new Date().toLocaleString()}`);
+        if (systemPrompt) {
+          doc.moveDown(0.5);
+          doc.fontSize(10).fillColor("#4b5563").text(`System Prompt: ${systemPrompt}`, {
+            oblique: true,
+          });
+        }
         doc.moveDown(1.5);
 
         for (const turn of turns) {

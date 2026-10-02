@@ -341,6 +341,41 @@ main {
   align-items: center;
 }
 
+/* System Prompt Card in Detail Page */
+.system-prompt-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.system-prompt-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-prompt-tag {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+}
+
+.system-prompt-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .conversation-feed {
   display: flex;
   flex-direction: column;
