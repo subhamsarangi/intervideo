@@ -312,6 +312,13 @@ async function endCall(reason = "Call ended") {
   startBtn.disabled = false;
   promptEl.disabled = false;
   ending = false;
+
+  // Redirect to session detail page after call ends
+  if (sessionId) {
+    setTimeout(() => {
+      redirectToSessionDetail(sessionId);
+    }, 2000); // 2 second delay to show the "Saved" message
+  }
 }
 
 // ---------- init ----------
