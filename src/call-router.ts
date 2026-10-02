@@ -23,7 +23,8 @@ export function parseCallRoute(): CallRouteParams {
   const pathname = url.pathname;
 
   // Pattern: /call/<sessionId> or /call.html
-  const callMatch = pathname.match(/^\/call(?:\/([a-z0-9_-]+))?(?:\.html)?$/i);
+  // SessionId format: 2026-10-02T18-40-08-542Z_1dcd3b (ISO with dashes + UUID)
+  const callMatch = pathname.match(/^\/call(?:\/([a-z0-9T\-Z_]+))?(?:\.html)?$/i);
 
   if (!callMatch) {
     return { isNewCall: true, isReturningToSession: false };
