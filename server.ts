@@ -106,12 +106,34 @@ async function summarize(oldNotes: string, turns: Turn[]): Promise<string> {
   return res.output_text.trim();
 }
 
+async function summarizeSession(turns: Turn[]): Promise<string> {
+  if (!turns || turns.length === 0) return "";
+  const transcript = turns
+    .map((t) => `${t.role === "user" ? "User" : "Avatar"}: ${t.content}`)
+    .join("\n");
+  const res = await openai.responses.create({
+    model: LLM_MODEL,
+    instructions:
+      "You are a concise executive assistant creating a crisp summary of a video call transcript. " +
+      "Output in clean, structured Markdown with short bullet points:\n" +
+      "- **Topic / Context**: 1 tight sentence on call objective or core theme.\n" +
+      "- **Key Highlights**: 2 to 4 concise bullet points covering critical arguments, questions, or responses.\n" +
+      "- **Outcome / Next Steps**: 1 sentence summary of conclusion, consensus, or unresolved point.\n" +
+      "No preamble, no conversational filler, max 150 words.",
+    input: `Conversation transcript:\n${transcript}`,
+    reasoning: { effort: "none" },
+    max_output_tokens: 350,
+  });
+  return res.output_text.trim();
+}
+
 // ---------- one conversation session (one WebSocket) ----------
 async function startSession(ws: WebSocket, systemPrompt: string) {
   const sessionId = `${new Date().toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 6)}`;
   const logFile = path.join(SESSIONS_DIR, `${sessionId}.jsonl`);
   let memory = await loadMemory();
   const recent: Turn[] = [];
+  const allTurns: Turn[] = [];
   let muted = false;
   let chain: Promise<void> = Promise.resolve();
 
@@ -128,6 +150,7 @@ async function startSession(ws: WebSocket, systemPrompt: string) {
   const addTurn = async (role: Turn["role"], content: string) => {
     const turn: Turn = { role, content, ts: Date.now() };
     recent.push(turn);
+    allTurns.push(turn);
     await appendFile(logFile, JSON.stringify(turn) + "\n");
   };
 
@@ -191,6 +214,19 @@ async function startSession(ws: WebSocket, systemPrompt: string) {
     async end() {
       dg.close();
       await chain;
+      if (allTurns.length >= 2) {
+        try {
+          const sessionSummary = await summarizeSession(allTurns);
+          if (sessionSummary) {
+            await appendFile(
+              logFile,
+              JSON.stringify({ type: "summary", summary: sessionSummary, ts: Date.now() }) + "\n"
+            );
+          }
+        } catch (e) {
+          console.error("Failed to generate session summary:", e);
+        }
+      }
       if (recent.length >= 2) {
         memory = await summarize(memory, recent);
         await saveMemory(memory);
@@ -248,6 +284,7 @@ const server = createServer(async (req, res) => {
           let messageCount = 0;
           let preview = "";
           let systemPrompt = "";
+          let summary = "";
           try {
             const content = await readFile(filePath, "utf8");
             const lines = content.trim().split("\n").filter(Boolean);
@@ -255,6 +292,8 @@ const server = createServer(async (req, res) => {
               const record = JSON.parse(line);
               if (record.type === "meta") {
                 if (record.systemPrompt) systemPrompt = record.systemPrompt;
+              } else if (record.type === "summary") {
+                if (record.summary) summary = record.summary;
               } else if (record.role) {
                 messageCount++;
                 if (!preview && record.content) {
@@ -276,6 +315,7 @@ const server = createServer(async (req, res) => {
             messageCount,
             preview,
             systemPrompt,
+            summary,
             hasPdf,
           };
         })
@@ -312,17 +352,21 @@ const server = createServer(async (req, res) => {
         }
       }
 
-      // Return session turns & system prompt
+      // Return session turns, system prompt & summary
       try {
         const content = await readFile(jsonlPath, "utf8");
         const lines = content.trim().split("\n").filter(Boolean);
         const turns: Turn[] = [];
         let systemPrompt = "";
-
+        let summary = "";
+        let summaryCount = 0;
         for (const line of lines) {
           const record = JSON.parse(line);
           if (record.type === "meta") {
             if (record.systemPrompt) systemPrompt = record.systemPrompt;
+          } else if (record.type === "summary") {
+            if (record.summary) summary = record.summary;
+            summaryCount++;
           } else if (record.role) {
             turns.push(record as Turn);
           }
@@ -334,10 +378,66 @@ const server = createServer(async (req, res) => {
           hasPdf = true;
         } catch {}
 
-        return json(200, { id, turns, systemPrompt, hasPdf });
+        // Can regenerate if never summarized (count 0) or summarized once (count 1 -> regenerate once makes it count 2)
+        const canRegenerate = summaryCount < 2;
+
+        return json(200, { id, turns, systemPrompt, summary, summaryCount, canRegenerate, hasPdf });
       } catch {
         return json(404, { error: "Session not found" });
       }
+    }
+
+    // Handle POST /api/sessions/:id/summarize (generate or re-generate individual session summary, max once per item)
+    if (req.method === "POST" && url.pathname.startsWith("/api/sessions/") && url.pathname.endsWith("/summarize")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const id = parts[2];
+      if (!id || !/^[\w-]+$/.test(id)) return json(400, { error: "bad session id" });
+
+      const jsonlPath = path.join(SESSIONS_DIR, `${id}.jsonl`);
+      let turns: Turn[] = [];
+      let summaryCount = 0;
+      try {
+        const content = await readFile(jsonlPath, "utf8");
+        const lines = content.trim().split("\n").filter(Boolean);
+        for (const line of lines) {
+          const record = JSON.parse(line);
+          if (record.type === "summary") {
+            summaryCount++;
+          } else if (record.role) {
+            turns.push(record as Turn);
+          }
+        }
+      } catch {
+        return json(404, { error: "Session not found" });
+      }
+
+      if (turns.length === 0) {
+        return json(400, { error: "Session has no messages to summarize" });
+      }
+
+      // Allow 1 initial generation + 1 regeneration (total max 2 summaries stored)
+      if (summaryCount >= 2) {
+        return json(403, {
+          error: "Summary has already been regenerated once. Regeneration limit reached.",
+          canRegenerate: false,
+        });
+      }
+
+      const summary = await summarizeSession(turns);
+      if (summary) {
+        await appendFile(
+          jsonlPath,
+          JSON.stringify({ type: "summary", summary, ts: Date.now() }) + "\n"
+        );
+        summaryCount++;
+      }
+
+      return json(200, {
+        success: true,
+        summary,
+        summaryCount,
+        canRegenerate: summaryCount < 2,
+      });
     }
 
     // Handle POST /api/sessions/:id/create-pdf
@@ -353,6 +453,7 @@ const server = createServer(async (req, res) => {
 
       let turns: Turn[] = [];
       let systemPrompt = "";
+      let summary = "";
       try {
         const content = await readFile(jsonlPath, "utf8");
         const lines = content.trim().split("\n").filter(Boolean);
@@ -360,6 +461,8 @@ const server = createServer(async (req, res) => {
           const record = JSON.parse(line);
           if (record.type === "meta") {
             if (record.systemPrompt) systemPrompt = record.systemPrompt;
+          } else if (record.type === "summary") {
+            if (record.summary) summary = record.summary;
           } else if (record.role) {
             turns.push(record as Turn);
           }
@@ -376,12 +479,20 @@ const server = createServer(async (req, res) => {
         doc.fontSize(20).text("Conversation Transcript", { underline: true });
         doc.fontSize(10).fillColor("#666666").text(`Session ID: ${id}`);
         doc.text(`Generated: ${new Date().toLocaleString()}`);
+
         if (systemPrompt) {
           doc.moveDown(0.5);
           doc.fontSize(10).fillColor("#4b5563").text(`System Prompt: ${systemPrompt}`, {
             oblique: true,
           });
         }
+
+        if (summary) {
+          doc.moveDown(0.5);
+          doc.fontSize(11).fillColor("#0f766e").text("Session Summary:", { underline: true });
+          doc.fontSize(10).fillColor("#1f2937").text(summary);
+        }
+
         doc.moveDown(1.5);
 
         for (const turn of turns) {

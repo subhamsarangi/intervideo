@@ -376,6 +376,91 @@ main {
   word-break: break-word;
 }
 
+/* Individual Session Summary Card in Detail Page */
+.summary-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid #10b981;
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.summary-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.summary-tag {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #059669;
+}
+
+.summary-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.summary-text.markdown-rendered p {
+  margin: 0 0 10px 0;
+}
+
+.summary-text.markdown-rendered p:last-child {
+  margin-bottom: 0;
+}
+
+.summary-text.markdown-rendered ul,
+.summary-text.markdown-rendered ol {
+  margin: 6px 0 12px 20px;
+  padding: 0;
+}
+
+.summary-text.markdown-rendered li {
+  margin-bottom: 5px;
+  line-height: 1.5;
+}
+
+.summary-text.markdown-rendered strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+/* Session summary snippet in sessions list card */
+.session-summary-snippet {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+  padding: 10px 14px;
+  background: var(--avatar);
+  border-left: 3px solid #10b981;
+  border-radius: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .conversation-feed {
   display: flex;
   flex-direction: column;

@@ -1,4 +1,4 @@
-export {};
+import { marked } from "marked";
 
 type Turn = {
   role: "user" | "assistant";
@@ -10,6 +10,9 @@ type SessionDetailResponse = {
   id: string;
   turns: Turn[];
   systemPrompt?: string;
+  summary?: string;
+  summaryCount?: number;
+  canRegenerate?: boolean;
   hasPdf: boolean;
 };
 
@@ -18,6 +21,9 @@ const sessionTimeEl = document.getElementById("sessionTime") as HTMLElement;
 const turnCountEl = document.getElementById("turnCount") as HTMLElement;
 const systemPromptCard = document.getElementById("systemPromptCard") as HTMLElement;
 const systemPromptContent = document.getElementById("systemPromptContent") as HTMLElement;
+const summaryCard = document.getElementById("summaryCard") as HTMLElement;
+const summaryContent = document.getElementById("summaryContent") as HTMLElement;
+const regenSummaryBtn = document.getElementById("regenSummaryBtn") as HTMLButtonElement;
 const pdfBtnContainer = document.getElementById("pdfBtnContainer") as HTMLElement;
 const headerActions = document.getElementById("headerActions") as HTMLElement;
 const loadingEl = document.getElementById("loading") as HTMLElement;
@@ -105,6 +111,58 @@ async function loadSessionDetail() {
       systemPromptContent.style.fontStyle = "italic";
       systemPromptContent.style.color = "var(--muted)";
     }
+
+    // Render individual session summary
+    summaryCard.style.display = "block";
+
+    const updateSummaryView = (summaryText: string, canRegen: boolean) => {
+      if (summaryText && summaryText.trim()) {
+        summaryContent.innerHTML = marked.parse(summaryText) as string;
+        summaryContent.classList.add("markdown-rendered");
+        summaryContent.style.fontStyle = "normal";
+        summaryContent.style.color = "var(--text)";
+
+        if (canRegen) {
+          regenSummaryBtn.style.display = "inline-block";
+          regenSummaryBtn.disabled = false;
+          regenSummaryBtn.textContent = "↻ Regenerate (Once)";
+          regenSummaryBtn.title = "You can regenerate this summary once.";
+        } else {
+          regenSummaryBtn.style.display = "inline-block";
+          regenSummaryBtn.disabled = true;
+          regenSummaryBtn.textContent = "✓ Regenerated";
+          regenSummaryBtn.title = "Summary has already been regenerated for this session.";
+        }
+      } else {
+        summaryContent.innerHTML = "<p>No summary generated yet for this session. Click the button to create one.</p>";
+        summaryContent.style.fontStyle = "italic";
+        summaryContent.style.color = "var(--muted)";
+        regenSummaryBtn.style.display = "inline-block";
+        regenSummaryBtn.disabled = false;
+        regenSummaryBtn.textContent = "✨ Generate Summary";
+      }
+    };
+
+    updateSummaryView(data.summary || "", data.canRegenerate ?? true);
+
+    regenSummaryBtn.onclick = async () => {
+      regenSummaryBtn.disabled = true;
+      regenSummaryBtn.textContent = "⏳ Summarizing...";
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/summarize`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || "Failed to generate summary");
+        }
+        const resData = await res.json();
+        updateSummaryView(resData.summary, resData.canRegenerate ?? false);
+      } catch (err) {
+        alert("Error creating summary: " + (err instanceof Error ? err.message : String(err)));
+        updateSummaryView(data.summary || "", data.canRegenerate ?? true);
+      }
+    };
 
     const turns = data.turns || [];
     turnCountEl.textContent = `💬 ${turns.length} messages`;

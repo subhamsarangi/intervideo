@@ -5,6 +5,8 @@ type SessionItem = {
   createdAt: number;
   messageCount: number;
   preview: string;
+  systemPrompt?: string;
+  summary?: string;
   hasPdf: boolean;
 };
 
@@ -103,7 +105,12 @@ async function loadSessions() {
       header.appendChild(badgeGroup);
       card.appendChild(header);
 
-      if (session.preview) {
+      if (session.summary) {
+        const summaryBox = document.createElement("div");
+        summaryBox.className = "session-summary-snippet";
+        summaryBox.innerHTML = `<strong>Summary:</strong> ${session.summary}`;
+        card.appendChild(summaryBox);
+      } else if (session.preview) {
         const preview = document.createElement("p");
         preview.className = "preview-quote";
         preview.textContent = `"${session.preview}"`;
