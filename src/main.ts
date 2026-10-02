@@ -1,6 +1,13 @@
 import { createAvatar, demoViseme, type Avatar } from "./avatar";
 import { createSpeaker, type Speaker } from "./tts";
 import { createRecorder, type Recorder } from "./recorder";
+import {
+  parseCallRoute,
+  updateCallUrl,
+  checkSessionExists,
+  redirectToSessionDetail,
+  beforeunloadHandler,
+} from "./call-router";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) =>
@@ -103,6 +110,8 @@ function onServerMessage(ev: MessageEvent) {
   switch (msg.type) {
     case "ready": {
       sessionId = msg.sessionId;
+      // Update URL with session ID (replaces history so back button doesn't break)
+      updateCallUrl(sessionId);
       try {
         recorder = createRecorder({
           avatarCanvas: canvas,
@@ -307,6 +316,23 @@ async function endCall(reason = "Call ended") {
 
 // ---------- init ----------
 async function init() {
+  // Check if returning to a completed call (do this before avatar loads)
+  const route = parseCallRoute();
+  if (route.isReturningToSession && route.sessionId) {
+    setStatus("Checking session...");
+    try {
+      const exists = await checkSessionExists(route.sessionId);
+      if (exists) {
+        // Call was completed, redirect to session detail
+        redirectToSessionDetail(route.sessionId);
+        return; // prevent further execution
+      }
+    } catch (err) {
+      console.error("Error checking session:", err);
+      // If check fails, continue to start a new call
+    }
+  }
+
   startBtn.disabled = true;
   stopBtn.disabled = true;
   setStatus("Loading face model...");
@@ -327,6 +353,16 @@ async function init() {
   startBtn.disabled = false;
   setStatus("Idle");
 }
+
+// Add beforeunload warning when in an active call
+window.addEventListener("beforeunload", (e) => {
+  const message = beforeunloadHandler(inCall);
+  if (message) {
+    // Modern browsers show their own message, but we can set returnValue
+    e.preventDefault();
+    e.returnValue = message;
+  }
+});
 
 captionsToggle.addEventListener("change", refreshCaptions);
 startBtn.addEventListener("click", () => void startCall());
