@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -5,6 +6,15 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8787",
       "/ws": { target: "ws://127.0.0.1:8787", ws: true },
+    },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        sessions: resolve(__dirname, "sessions.html"),
+        sessionDetail: resolve(__dirname, "session-detail.html"),
+      },
     },
   },
 });

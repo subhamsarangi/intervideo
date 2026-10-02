@@ -1,9 +1,10 @@
 import { createServer } from "node:http";
 import { createWriteStream } from "node:fs";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile, readdir, stat } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import PDFDocument from "pdfkit";
 import { WebSocketServer, type WebSocket } from "ws";
 import { DeepgramClient } from "@deepgram/sdk";
 import OpenAI from "openai";
@@ -192,7 +193,7 @@ async function startSession(ws: WebSocket, systemPrompt: string) {
   };
 }
 
-// ---------- HTTP: Azure token + recording upload ----------
+// ---------- HTTP: Azure token + recording upload + sessions + pdf ----------
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const json = (code: number, body: unknown) => {
@@ -222,6 +223,154 @@ const server = createServer(async (req, res) => {
       const file = path.join(RECORDINGS_DIR, `${id}.webm`);
       await pipeline(req, createWriteStream(file, { flags: "a" })); // chunks arrive in order and are appended
       return json(200, { saved: file });
+    }
+
+    // List all sessions in reverse chronological order
+    if (req.method === "GET" && url.pathname === "/api/sessions") {
+      const files = await readdir(SESSIONS_DIR);
+      const jsonlFiles = files.filter(
+        (f) => f.endsWith(".jsonl") && !f.startsWith(".")
+      );
+
+      const items = await Promise.all(
+        jsonlFiles.map(async (file) => {
+          const id = file.replace(/\.jsonl$/, "");
+          const filePath = path.join(SESSIONS_DIR, file);
+          const pdfPath = path.join(SESSIONS_DIR, `${id}.pdf`);
+          const fileStat = await stat(filePath);
+
+          let messageCount = 0;
+          let preview = "";
+          try {
+            const content = await readFile(filePath, "utf8");
+            const lines = content.trim().split("\n").filter(Boolean);
+            messageCount = lines.length;
+            if (lines.length > 0) {
+              const firstTurn = JSON.parse(lines[0]);
+              preview = firstTurn.content ?? "";
+            }
+          } catch {}
+
+          let hasPdf = false;
+          try {
+            await stat(pdfPath);
+            hasPdf = true;
+          } catch {}
+
+          return {
+            id,
+            createdAt: fileStat.birthtimeMs || fileStat.mtimeMs,
+            messageCount,
+            preview,
+            hasPdf,
+          };
+        })
+      );
+
+      // Sort reverse chronological
+      items.sort((a, b) => b.createdAt - a.createdAt);
+      return json(200, { sessions: items });
+    }
+
+    // Get specific session details or PDF download
+    if (req.method === "GET" && url.pathname.startsWith("/api/sessions/")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      // /api/sessions/:id or /api/sessions/:id/pdf
+      const id = parts[2];
+      if (!id || !/^[\w-]+$/.test(id)) return json(400, { error: "bad session id" });
+
+      const isPdfReq = parts[3] === "pdf";
+      const jsonlPath = path.join(SESSIONS_DIR, `${id}.jsonl`);
+      const pdfPath = path.join(SESSIONS_DIR, `${id}.pdf`);
+
+      if (isPdfReq) {
+        try {
+          const pdfData = await readFile(pdfPath);
+          res.writeHead(200, {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename="${id}.pdf"`,
+            "Content-Length": pdfData.length,
+          });
+          res.end(pdfData);
+          return;
+        } catch {
+          return json(404, { error: "PDF not found on disk" });
+        }
+      }
+
+      // Return session turns
+      try {
+        const content = await readFile(jsonlPath, "utf8");
+        const turns: Turn[] = content
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line));
+
+        let hasPdf = false;
+        try {
+          await stat(pdfPath);
+          hasPdf = true;
+        } catch {}
+
+        return json(200, { id, turns, hasPdf });
+      } catch {
+        return json(404, { error: "Session not found" });
+      }
+    }
+
+    // Handle POST /api/sessions/:id/create-pdf
+    if (req.method === "POST" && url.pathname.startsWith("/api/sessions/")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const id = parts[2];
+      const isCreatePdf = parts[3] === "create-pdf";
+      if (!id || !/^[\w-]+$/.test(id) || !isCreatePdf) {
+        return json(400, { error: "bad request" });
+      }
+      const jsonlPath = path.join(SESSIONS_DIR, `${id}.jsonl`);
+      const pdfPath = path.join(SESSIONS_DIR, `${id}.pdf`);
+
+      let turns: Turn[] = [];
+      try {
+        const content = await readFile(jsonlPath, "utf8");
+        turns = content
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line));
+      } catch {
+        return json(404, { error: "Session not found" });
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const doc = new PDFDocument({ margin: 40 });
+        const stream = createWriteStream(pdfPath);
+        doc.pipe(stream);
+
+        doc.fontSize(20).text("Conversation Transcript", { underline: true });
+        doc.fontSize(10).fillColor("#666666").text(`Session ID: ${id}`);
+        doc.text(`Generated: ${new Date().toLocaleString()}`);
+        doc.moveDown(1.5);
+
+        for (const turn of turns) {
+          const isUser = turn.role === "user";
+          const label = isUser ? "User" : "Avatar";
+          const roleColor = isUser ? "#1d4ed8" : "#047857";
+          const timeStr = turn.ts ? new Date(turn.ts).toLocaleTimeString() : "";
+
+          doc.fontSize(11).fillColor(roleColor).text(`${label} [${timeStr}]:`, {
+            continued: false,
+          });
+          doc.fontSize(10).fillColor("#111827").text(turn.content);
+          doc.moveDown(0.8);
+        }
+
+        doc.end();
+        stream.on("finish", () => resolve());
+        stream.on("error", reject);
+      });
+
+      return json(200, { success: true, pdfUrl: `/api/sessions/${id}/pdf` });
     }
 
     json(404, { error: "not found" });
