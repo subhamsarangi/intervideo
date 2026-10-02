@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Avatar Call</title>
+    <title>InterVideo</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -14,39 +14,30 @@
           <span>InterVideo</span>
         </a>
         <nav class="nav-links">
-          <a href="/" class="nav-link active">Live Call</a>
+          <a href="/call.html" class="nav-link">Live Call</a>
           <a href="/sessions.html" class="nav-link">Sessions</a>
         </nav>
       </div>
     </header>
 
-    <main>
-      <section class="videos">
-        <div class="tile">
-          <canvas id="avatar" width="640" height="480"></canvas>
-          <div class="caption" id="capAvatar"></div>
-          <span class="label">Avatar</span>
-        </div>
-        <div class="tile">
-          <video id="cam" width="640" height="480" autoplay muted playsinline></video>
-          <div class="caption" id="capUser"></div>
-          <span class="label">You</span>
-        </div>
-      </section>
+    <main class="page-container home-page">
+      <div class="hero">
+        <h1>InterVideo</h1>
+        <p class="hero-subtitle">AI-powered avatar video interviews with real-time conversation</p>
+      </div>
 
-      <section class="controls">
-        <textarea id="systemPrompt" rows="3" spellcheck="false">You are a friendly job interviewer. Ask one question at a time and react to my answers.</textarea>
-        <div class="buttons">
-          <button id="startBtn">Start call</button>
-          <button id="stopBtn" disabled>End call</button>
-          <label class="toggle"><input type="checkbox" id="captionsToggle" checked /> Captions</label>
-          <span id="status">Idle</span>
-        </div>
-      </section>
-
-      <section id="log" class="log" aria-live="polite"></section>
+      <div class="home-cards">
+        <a href="/call.html" class="home-card">
+          <div class="home-card-icon">📹</div>
+          <h3>Live Call</h3>
+          <p>Start a new avatar interview session with webcam and real-time AI conversation.</p>
+        </a>
+        <a href="/sessions.html" class="home-card">
+          <div class="home-card-icon">📋</div>
+          <h3>Sessions</h3>
+          <p>Browse past sessions, view transcripts, summaries, and download PDFs.</p>
+        </a>
+      </div>
     </main>
-
-    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

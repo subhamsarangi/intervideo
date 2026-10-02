@@ -12,6 +12,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
+        call: resolve(__dirname, "call.html"),
         sessions: resolve(__dirname, "sessions.html"),
         sessionDetail: resolve(__dirname, "session-detail.html"),
       },
