@@ -79,11 +79,11 @@ export const TUNING = {
   head: {
     amount: 0.5, // master dial when there is a separate background: 0 = head perfectly still, 1 = default, 2 = twice as much
     amountOnFlatPhoto: 0.3, // used when there is NO background file: the whole photo moves, so keep it small (0 = still)
-    tilt: 0.001, // slow tilt (radians)
-    tiltFast: 0.006, // quicker small tilt
+    tilt: 0.01, // slow tilt (radians)
+    tiltFast: 0.06, // quicker small tilt
     tiltWhenSpeaking: 0.0008, // extra tilt while talking
-    zoom: 0.0004, // slow breathing zoom
-    zoomWhenSpeaking: 0.0005, // extra zoom while talking
+    zoom: 0.004, // slow breathing zoom
+    zoomWhenSpeaking: 0.005, // extra zoom while talking
     driftX: 1, // sideways drift (px)
     driftY: 1, // up/down drift (px)
   },

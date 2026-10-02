@@ -7,14 +7,13 @@ export default defineConfig({
       "/api": "http://127.0.0.1:8787",
       "/ws": { target: "ws://127.0.0.1:8787", ws: true },
     },
-    // Fallback routing for SPA: send /call/* routes to call.html
     middlewares: [
       {
         name: "spa-fallback",
         apply: "serve",
         handler(req, res, next) {
-          // Match /call/ or /call/* but not /call.html
-          if (req.url?.match(/^\/call\//) && !req.url.endsWith(".html")) {
+          // Rewrite /call/* to /call.html before Vite processes it
+          if (req.url.startsWith("/call/")) {
             req.url = "/call.html";
           }
           next();

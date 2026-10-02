@@ -4,7 +4,6 @@ import { createRecorder, type Recorder } from "./recorder";
 import {
   parseCallRoute,
   updateCallUrl,
-  checkSessionExists,
   redirectToSessionDetail,
   beforeunloadHandler,
 } from "./call-router";
@@ -323,20 +322,18 @@ async function endCall(reason = "Call ended") {
 
 // ---------- init ----------
 async function init() {
-  // Check if returning to a completed call (do this before avatar loads)
+  // Check if returning to a call URL with session ID
   const route = parseCallRoute();
   if (route.isReturningToSession && route.sessionId) {
-    setStatus("Checking session...");
+    setStatus("Redirecting to session...");
     try {
-      const exists = await checkSessionExists(route.sessionId);
-      if (exists) {
-        // Call was completed, redirect to session detail
-        redirectToSessionDetail(route.sessionId);
-        return; // prevent further execution
-      }
+      // Redirect to session detail page immediately
+      redirectToSessionDetail(route.sessionId);
+      return; // prevent further execution
     } catch (err) {
-      console.error("Error checking session:", err);
-      // If check fails, continue to start a new call
+      setStatus(`Redirect error: ${err instanceof Error ? err.message : String(err)}`);
+      console.error("Redirect error:", err);
+      // Continue if redirect fails for some reason
     }
   }
 
